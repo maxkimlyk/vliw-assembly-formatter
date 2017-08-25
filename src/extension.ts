@@ -10,114 +10,206 @@ function repeat(line: string, amount: number) : string {
     return result;
 }
 
-function correctCommandLine(line: string) : string {
-    var result = "";
-    var words = line.split(" ");
+class AlligningsChanged extends Error {}
 
-    // Remove all empty words
-    words = words.filter(
-        (value: string, index:number, array: string[]) => {
-            return value != "";
-        }
-    )
+class Formatter {
 
-    var expectingParameters = false;
+    private allignings = [8, 40, 72, 96, 120, 136, 152, 168];
 
-    var allignings = [8, 32, 64, 80, 96, 108, 120, 132];
-    var commandNumber = 0;
-
-    for (var i = 0; i < words.length; i++) {
-
-        var word = words[i];
-
-        if (word == "")
-            continue;
-
-        // Label at the string begining
-        if (i == 0 && word.match("^\\w+:$")) {
-            result += word;
-            if (word.length > 7)
-                result += "\n";     // TROUBLE WITH IT - INCORRECT ACTUAL LENGTH OF STRING
-            else {
-                result += repeat(" ", 8 - word.length);
-            }
-            continue;
-        }
-
-        // Command
-        if (!expectingParameters) {
-
-            var allign = allignings[commandNumber];
-            result += repeat(" ", allign - result.length);
-
-            commandNumber++;
-
-            result += word;
-            result += " ";
-
-            expectingParameters = true;
-        // Parameters
-        } else {
-
-            if (!word.match("^[\\w\\+\\*\\(\\)]*,$") && words[i+1] != ",") {
-                expectingParameters = false;
-            }
-
-            result += word;
-            result += " ";
-        }
-
+    public dispose() : any {
+        // Do nothing
     }
 
-    return result;
+    public formatDocument(document: vscode.TextDocument): vscode.TextEdit[] {
+        var prevLineEmpty = false;
+        var edits = [];
+
+        for (var i = 0; i < document.lineCount; i++) {
+            var currentLine = document.lineAt(i);
+
+            // Empty line
+            if (currentLine.isEmptyOrWhitespace) {
+                if (prevLineEmpty)
+                    edits.push(vscode.TextEdit.delete(currentLine.rangeIncludingLineBreak));
+                prevLineEmpty = true;
+                continue;
+            } else {
+                prevLineEmpty = false;
+            }
+
+            // Only comment in string
+            if (currentLine.text.match("^\\s*\\/?[;*].*$")) {
+                continue;
+            }
+
+            // Directive string
+            if (currentLine.text.match("^\\s*\\.")) {
+                continue;
+            }
+
+            // Label only
+            if (currentLine.text.match("^\\s*\\w+:\\s*$")) {
+                edits.push(vscode.TextEdit.replace(currentLine.range, currentLine.text.trim()));
+                continue;
+            }
+
+            // Command string
+            try {
+
+                if (!currentLine.text.match(",")) {
+                    var newString = this.correctCommandLineWithoutSeparators(currentLine.text);
+                } else {
+                    var newString = this.correctRegularCommandLine(currentLine.text);
+                }
+
+                edits.push(vscode.TextEdit.replace(currentLine.range, newString));
+
+            } catch (e) {
+                if (e instanceof AlligningsChanged) {
+                    // Reformat document
+                    return this.formatDocument(document);
+                }
+            }
+        }
+
+        return edits;
+    }
+
+    private correctCommandLineWithoutSeparators(line: string) : string {
+        var result = repeat(" ", 8);
+        var words = line.split(" ");
+
+        // Remove all empty words
+        words = words.filter(
+            (value: string, index: number, array: string[]) => {
+                return value != "";
+            }
+        )
+
+        for (var i = 0; i < words.length; i++) {
+            result += words[i];
+            if (i != words.length - 1)
+                result += " ";
+        }
+
+        return result;
+    }
+
+    private correctRegularCommandLine(line: string) : string {
+        var result = "";
+        var resultPrefix = "";
+        var words = line.split(" ");
+
+        // Remove all empty words
+        words = words.filter(
+            (value: string, index:number, array: string[]) => {
+                return value != "";
+            }
+        )
+
+        var expectingParameters = false;
+        var commandNumber = 0;
+        var prevWordIsLabel = false;
+        var comment = false;
+        var bracketCount = 0;
+
+        for (var i = 0; i < words.length; i++) {
+
+            var word = words[i];
+
+            if (word == "")
+                continue;
+
+            // Label at the string begining
+            if (i == 0 && word.match("^\\w+:$")) {
+                if (word.length > 7) {
+                    resultPrefix += word;
+                    resultPrefix += "\n";
+                } else {
+                    result += word + repeat(" ", 8 - word.length);
+                    prevWordIsLabel = true;
+                }
+                continue;
+            }
+
+            // Comment at the end of line
+            if (word.match("^(;|\\/\\*)")) {
+                comment = true;
+            }
+
+            if (comment) {
+                result += " " + word;
+                continue;
+            }
+
+            // Check brackets
+            var openingBracketMatch = word.match("\\(");
+            var closingBracketMatch = word.match("\\)");
+            if (openingBracketMatch != null)
+                bracketCount += openingBracketMatch.length;
+            if (closingBracketMatch != null)
+                bracketCount -= closingBracketMatch.length;
+
+            // Command
+            if (!expectingParameters) {
+
+                var allign = this.allignings[commandNumber];
+                var whitespacesNecessary = allign - result.length;
+
+                // Must be at least 4 whitespaces between commands
+                if (!prevWordIsLabel && whitespacesNecessary < 4) {
+
+                    if (allign < result.length)
+                        var addToAlign = Math.ceil((result.length - allign) / 4.0) * 4 + 4;
+                    else var addToAlign = 4;
+
+                    allign += addToAlign;
+                    for (var k = commandNumber; k < this.allignings.length; k++) {
+                        this.allignings[k] += addToAlign;
+                    }
+
+                    throw new AlligningsChanged();
+                }
+
+                result += repeat(" ", allign - result.length);
+
+                commandNumber++;
+
+                result += word;
+
+                if (word.length > 7)
+                    result += " ";
+                else
+                    result += repeat(" ", 8 - word.length);
+
+                prevWordIsLabel = false;
+                expectingParameters = true;
+            // Parameters
+            } else {
+
+                result += word;
+
+                if (!word.match("^[\\w\\+\\*\\(\\)]*,$") && words[i+1] != "," && bracketCount <= 0) {
+                    expectingParameters = false;
+                    continue;
+                }
+
+                result += " ";
+            }
+
+        }
+
+        return resultPrefix + result;
+    }
 }
 
 export function activate(context: vscode.ExtensionContext) {
 
     vscode.languages.registerDocumentFormattingEditProvider('asm', {
         provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
-
-            var prevLineEmpty = false;
-            var edits = [];
-
-            for (var i = 0; i < document.lineCount; i++) {
-                var currentLine = document.lineAt(i);
-
-                // Empty line
-                if (currentLine.isEmptyOrWhitespace) {
-                    if (prevLineEmpty)
-                        edits.push(vscode.TextEdit.delete(currentLine.rangeIncludingLineBreak));
-                    prevLineEmpty = true;
-                    continue;
-                } else {
-                    prevLineEmpty = false;
-                }
-
-                // Only comment in string
-                if (currentLine.text.match("^\\s*\\/?[;*].*$")) {
-                    continue;
-                }
-
-                // Directive string
-                if (currentLine.text.match("^\\s*\\.")) {
-                    continue;
-                }
-
-                // Label only
-                if (currentLine.text.match("^\\s*\\w+:\\s*$")) {
-                    edits.push(vscode.TextEdit.replace(currentLine.range, currentLine.text.trim()));
-                    continue;
-                }
-
-                // Command string
-                // label: com1 r1, r2   com2 r3, r5, r6  com3
-                var str = currentLine.text;
-                var newString = correctCommandLine(str);
-                edits.push(vscode.TextEdit.replace(currentLine.range, newString));
-            }
-
-            return edits;
+            var formatter = new Formatter();
+            context.subscriptions.push(formatter);
+            return formatter.formatDocument(document);
         }
     });
 }
-
