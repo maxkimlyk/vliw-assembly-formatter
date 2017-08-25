@@ -189,7 +189,7 @@ class Formatter {
 
                 result += word;
 
-                if (!word.match("^[\\w\\+\\*\\(\\)]*,$") && words[i+1] != "," && bracketCount <= 0) {
+                if (!word.match("^[^,]*,$") && words[i+1] != "," && bracketCount <= 0) {
                     expectingParameters = false;
                     continue;
                 }
