@@ -62,6 +62,12 @@ class Formatter {
             return null;
         }
 
+        // Data string (only for byte or short now)
+        if (commandString.match("^\\s*\\.(byte|short)")) {
+            var newString = this.formatDataLine(commandString);
+            return vscode.TextEdit.replace(currentLine.range, newString);
+        }
+
         // Directive string
         if (commandString.match("^\\s*\\.")) {
             return null;
@@ -92,6 +98,51 @@ class Formatter {
         }
 
         return vscode.TextEdit.replace(currentLine.range, newString);
+    }
+
+    private formatDataLine(line: string) : string {
+        var result = repeat(" ", 8);
+        var words = line.split(new RegExp("[ ,]"));
+
+        // Remove all empty words
+        words = words.filter(
+            (value: string, index: number, array: string[]) => {
+                return value != "";
+            }
+        )
+
+        if (words[0] == ".byte") {
+            var allignment = 4;
+        } else if (words[0] == ".short") {
+            var allignment = 7;
+        } else {
+            return line;
+        }
+
+        result += words[0];
+
+        var firstNumber = true;
+
+        for (var i = 1; i < words.length; i++) {
+            var word = words[i];
+            if (word == ",")
+                continue;
+
+            if (word.length < allignment) {
+                word = repeat(" ", allignment - word.length) + word;
+            } else if (firstNumber) {
+                // Do not paste together directive (.byte, .short, ...) and number;
+                word = " " + word;
+            }
+            
+            if (!firstNumber)
+                word = "," + word;
+            else firstNumber = false;
+
+            result += word;
+        }
+
+        return result;
     }
 
     private formatCommandLineWithoutSeparators(line: string) : string {
