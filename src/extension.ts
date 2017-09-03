@@ -25,7 +25,9 @@ class Formatter {
         var edits = [];
 
         for (var i = 0; i < document.lineCount; i++) {
+            var postfix = "";
             var currentLine = document.lineAt(i);
+            var commandString = currentLine.text;
 
             // Empty line
             if (currentLine.isEmptyOrWhitespace) {
@@ -38,28 +40,40 @@ class Formatter {
             }
 
             // Only comment in string
-            if (currentLine.text.match("^\\s*\\/?[;*].*$")) {
+            if (commandString.match("^\\s*\\/?[;*].*$")) {
                 continue;
             }
 
             // Directive string
-            if (currentLine.text.match("^\\s*\\.")) {
+            if (commandString.match("^\\s*\\.")) {
                 continue;
             }
 
             // Label only
-            if (currentLine.text.match("^\\s*\\w+:\\s*$")) {
-                edits.push(vscode.TextEdit.replace(currentLine.range, currentLine.text.trim()));
+            if (commandString.match("^\\s*\\w+:\\s*$")) {
+                edits.push(vscode.TextEdit.replace(currentLine.range, commandString.trim()));
                 continue;
+            }
+
+            // Comment at the end of string
+            var commentIndex = commandString.indexOf(";");
+            if (commentIndex > 0) {
+                var commentString = currentLine.text.substr(commentIndex);
+                commandString = currentLine.text.substr(0, commentIndex);
+                postfix = commentString;
             }
 
             // Command string
             try {
 
                 if (!currentLine.text.match(",")) {
-                    var newString = this.correctCommandLineWithoutSeparators(currentLine.text);
+                    var newString = this.correctCommandLineWithoutSeparators(commandString);
                 } else {
-                    var newString = this.correctRegularCommandLine(currentLine.text);
+                    var newString = this.correctRegularCommandLine(commandString);
+                }
+
+                if (postfix != "") {
+                    newString = newString + " " + commentString;
                 }
 
                 edits.push(vscode.TextEdit.replace(currentLine.range, newString));
@@ -129,16 +143,6 @@ class Formatter {
                     result += word + repeat(" ", 8 - word.length);
                     prevWordIsLabel = true;
                 }
-                continue;
-            }
-
-            // Comment at the end of line
-            if (word.match("^(;|\\/\\*)")) {
-                comment = true;
-            }
-
-            if (comment) {
-                result += " " + word;
                 continue;
             }
 
