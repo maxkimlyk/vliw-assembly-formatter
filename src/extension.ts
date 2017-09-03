@@ -25,10 +25,8 @@ class Formatter {
         var edits = [];
 
         for (var i = 0; i < document.lineCount; i++) {
-            var postfix = "";
             var currentLine = document.lineAt(i);
-            var commandString = currentLine.text;
-
+        
             // Empty line
             if (currentLine.isEmptyOrWhitespace) {
                 if (prevLineEmpty)
@@ -39,45 +37,11 @@ class Formatter {
                 prevLineEmpty = false;
             }
 
-            // Only comment in string
-            if (commandString.match("^\\s*\\/?[;*].*$")) {
-                continue;
-            }
-
-            // Directive string
-            if (commandString.match("^\\s*\\.")) {
-                continue;
-            }
-
-            // Label only
-            if (commandString.match("^\\s*\\w+:\\s*$")) {
-                edits.push(vscode.TextEdit.replace(currentLine.range, commandString.trim()));
-                continue;
-            }
-
-            // Comment at the end of string
-            var commentIndex = commandString.indexOf(";");
-            if (commentIndex > 0) {
-                var commentString = currentLine.text.substr(commentIndex);
-                commandString = currentLine.text.substr(0, commentIndex);
-                postfix = commentString;
-            }
-
-            // Command string
             try {
-
-                if (!currentLine.text.match(",")) {
-                    var newString = this.correctCommandLineWithoutSeparators(commandString);
-                } else {
-                    var newString = this.correctRegularCommandLine(commandString);
+                var edit = this.formatNotEmptyLine(currentLine);
+                if (edit != null) {
+                    edits.push(edit);
                 }
-
-                if (postfix != "") {
-                    newString = newString + " " + commentString;
-                }
-
-                edits.push(vscode.TextEdit.replace(currentLine.range, newString));
-
             } catch (e) {
                 if (e instanceof AlligningsChanged) {
                     // Reformat document
@@ -89,7 +53,48 @@ class Formatter {
         return edits;
     }
 
-    private correctCommandLineWithoutSeparators(line: string) : string {
+    private formatNotEmptyLine(currentLine: vscode.TextLine) : vscode.TextEdit {
+        var postfix = "";
+        var commandString = currentLine.text;
+
+        // Only comment in string
+        if (commandString.match("^\\s*\\/?[;*].*$")) {
+            return null;
+        }
+
+        // Directive string
+        if (commandString.match("^\\s*\\.")) {
+            return null;
+        }
+
+        // Label only
+        if (commandString.match("^\\s*\\w+:\\s*$")) {
+            return vscode.TextEdit.replace(currentLine.range, commandString.trim());
+        }
+
+        // Comment at the end of string
+        var commentIndex = commandString.indexOf(";");
+        if (commentIndex > 0) {
+            var commentString = currentLine.text.substr(commentIndex);
+            commandString = currentLine.text.substr(0, commentIndex);
+            postfix = commentString;
+        }
+
+        // Command string
+        if (!commandString.match(",") && !commandString.match("^\\s*(br|b|j|jmp)(\\.p\\d)? ")) {
+            var newString = this.formatCommandLineWithoutSeparators(commandString);
+        } else {
+            var newString = this.formatRegularCommandLine(commandString);
+        }
+
+        if (postfix != "") {
+            newString = newString + " " + commentString;
+        }
+
+        return vscode.TextEdit.replace(currentLine.range, newString);
+    }
+
+    private formatCommandLineWithoutSeparators(line: string) : string {
         var result = repeat(" ", 8);
         var words = line.split(" ");
 
@@ -109,7 +114,7 @@ class Formatter {
         return result;
     }
 
-    private correctRegularCommandLine(line: string) : string {
+    private formatRegularCommandLine(line: string) : string {
         var result = "";
         var resultPrefix = "";
         var words = line.split(" ");
