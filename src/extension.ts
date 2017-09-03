@@ -121,7 +121,7 @@ class Formatter {
                 continue;
 
             // Label at the string begining
-            if (i == 0 && word.match("^\\w+:$")) {
+            if (i == 0 && word.match("^\\\\?[\\w]+:")) {
                 if (word.length > 7) {
                     resultPrefix += word;
                     resultPrefix += "\n";
